@@ -76,7 +76,7 @@ function drawHome(){
   const lp = allc.price.filter(v=>v!=null), lr = allc.rent.filter(v=>v!=null);
   $('#homeIdxSub').textContent = `Price ${fmt1(lp.at(-1))} · Rent ${fmt1(lr.at(-1))}`;
 
-  // cheapest vs priciest districts (new-launch psf)
+  // cheapest vs priciest districts (second-hand median $/sq.ft)
   const priced = state.districts.by_district.filter(d=>d.avg_psf!=null).sort((a,b)=>b.avg_psf-a.avg_psf);
   const pick = [...priced.slice(0,5), ...priced.slice(-5)];
   drawDistrictBars('homeDistrictChart', pick, 'avg_psf', 'HK$ / sq.ft');
@@ -112,19 +112,18 @@ function drawDistricts(){
   document.querySelector('#pane-districts .card-head h2').textContent =
     regionsMode ? 'Where to buy — by region (official)' : 'Where to buy — the 18 districts';
   document.querySelector('#pane-districts .card-sub').textContent =
-    regionsMode ? 'RVD average price, family flats' : 'primary-market new launches';
+    regionsMode ? 'RVD average price, family flats' : 'second-hand median $/sq.ft';
   $('#distMetric').parentElement.style.display = regionsMode ? 'none' : '';
   let rows = d.by_district || [];
   if (region!=='all') rows = rows.filter(x=>x.region===region);
-  const titles={avg_psf:'HK$ / sq.ft', remaining:'Unsold units', units:'Total new units'};
-  drawDistrictBars('districtChart', rows, metric, titles[metric]);
+  const titles={avg_psf:'HK$ / sq.ft', units:'Transactions (30 days)'};
+  drawDistrictBars('districtChart', rows, metric, titles[metric]||'HK$ / sq.ft');
   const t = d.totals || {};
   $('#districtNote').textContent = regionsMode ? (d.source||'')
-    : `Primary-market new launches: ${fmt(t.projects)} projects, ${fmt(t.units)} units across ${t.districts_with_launches}/18 districts. `
-      + `Official RVD 18-district secondary-price series will be added once the source is confirmed.`;
+    : `${d.source||''}. Based on ${fmt(t.units)} second-hand sales across ${t.districts_with_data||0}/18 districts · Source: Centaline (hk.centanet.com).`;
   const cols = regionsMode
     ? [['district','Region'],['avg_psf','$/sq.ft']]
-    : [['district','District'],['region','Region'],['avg_psf','$/sq.ft'],['units','New units'],['remaining','Unsold'],['sold_pct','Sold %']];
+    : [['district','District'],['region','Region'],['avg_psf','$/sq.ft'],['units','Transactions']];
   buildTable('#districtTable', cols, d.by_district || [], region);
 }
 
