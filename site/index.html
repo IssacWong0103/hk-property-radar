@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>HK Property Radar</title>
   <meta name="description" content="Hong Kong residential price & rent trends across the 18 districts — for a family buyer/renter.">
+  <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
@@ -52,7 +53,7 @@
       </div>
       <div class="two-col">
         <div class="card">
-          <div class="card-head"><h2>Cheapest vs priciest districts</h2><span class="card-sub">new-launch $/sq.ft</span></div>
+          <div class="card-head"><h2>Cheapest vs priciest districts</h2><span class="card-sub">second-hand · $/sq.ft</span></div>
           <div id="homeDistrictChart" class="chart chart-sm"></div>
         </div>
         <div class="card">
@@ -67,7 +68,7 @@
       <div class="card">
         <div class="card-head">
           <h2>Where to buy — the 18 districts</h2>
-          <span class="card-sub">primary-market new launches</span>
+          <span class="card-sub">second-hand median $/sq.ft</span>
         </div>
         <div class="controls">
           <label>Region
@@ -80,9 +81,8 @@
           </label>
           <label>Show
             <select id="distMetric">
-              <option value="avg_psf">Avg price ($/sq.ft)</option>
-              <option value="remaining">Unsold units (choice left)</option>
-              <option value="units">Total new units</option>
+              <option value="avg_psf">Median $/sq.ft</option>
+              <option value="units">Transactions (30 days)</option>
             </select>
           </label>
         </div>
@@ -182,6 +182,6 @@
     <span>Data: HK Rating &amp; Valuation Dept · Land Registry · HKAB · HKEX. News summarised by AI — verify via source links.</span>
   </footer>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

@@ -92,6 +92,27 @@ AREA = {
     "愉景灣": ("Discovery Bay", "Islands"),
     "大嶼山南岸": ("South Lantau", "Islands"),
     "長洲": ("Cheung Chau", "Islands"),
+    # ---- Official 18 district names themselves ----
+    # The Centaline second-hand feed (fetch_centaline) reports at district level,
+    # so each district's own name must also resolve to itself here.
+    "中西區": ("Central & Western", "Central & Western"),
+    "灣仔區": ("Wan Chai", "Wan Chai"),
+    "東區": ("Eastern", "Eastern"),
+    "南區": ("Southern", "Southern"),
+    "油尖旺區": ("Yau Tsim Mong", "Yau Tsim Mong"),
+    "深水埗區": ("Sham Shui Po", "Sham Shui Po"),
+    "九龍城區": ("Kowloon City", "Kowloon City"),
+    "黃大仙區": ("Wong Tai Sin", "Wong Tai Sin"),
+    "觀塘區": ("Kwun Tong", "Kwun Tong"),
+    "荃灣區": ("Tsuen Wan", "Tsuen Wan"),
+    "屯門區": ("Tuen Mun", "Tuen Mun"),
+    "元朗區": ("Yuen Long", "Yuen Long"),
+    "北區": ("North", "North"),
+    "大埔區": ("Tai Po", "Tai Po"),
+    "沙田區": ("Sha Tin", "Sha Tin"),
+    "葵青區": ("Kwai Tsing", "Kwai Tsing"),
+    "離島區": ("Islands", "Islands"),
+    "西貢區": ("Sai Kung", "Sai Kung"),
 }
 
 

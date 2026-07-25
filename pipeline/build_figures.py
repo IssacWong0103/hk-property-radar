@@ -249,16 +249,17 @@ def build_districts() -> dict:
     by_district = [row(name, region, df[df["_official"] == name]) for name, region in DISTRICTS_18]
 
     totals = {
-        "units": _r(df["_units"].sum(min_count=1), 0),
+        "mode": "secondhand",
+        "units": _r(df["_units"].sum(min_count=1), 0),        # total transactions in the sample
         "sold": _r(df["_sold"].sum(min_count=1), 0),
         "remaining": _r(df["_remain"].sum(min_count=1), 0),
         "projects": int(len(df)),
         "areas": len(areas),
-        "districts_with_launches": int(sum(1 for d in by_district if d["projects"])),
+        "districts_with_data": int(sum(1 for d in by_district if d["avg_psf"] is not None)),
         "unmapped_areas": sorted(set(df.loc[df["_official"].isna(), "_area"]) - {"nan", ""}),
     }
     return {"by_district": by_district, "areas": areas, "totals": totals,
-            "source": "RVD first-hand sales register (primary market), rolled up to the 18 districts"}
+            "source": "Centaline second-hand transaction records — median saleable HK$/sq.ft by district (recent ~30 days)"}
 
 
 # --------------------------------------------------------------- transaction volume
