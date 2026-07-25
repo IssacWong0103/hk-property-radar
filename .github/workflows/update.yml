@@ -1,0 +1,60 @@
+name: Refresh & deploy
+
+on:
+  schedule:
+    - cron: "0 0 * * *"      # daily 00:00 UTC = 08:00 HKT  (news refresh; keeps the cron alive)
+    - cron: "0 1 * * 1"      # Mondays 01:00 UTC — heavier weekly data refresh
+  workflow_dispatch: {}       # manual "Run workflow" button
+  push:
+    branches: [main]          # redeploy when you change code
+    paths-ignore: ["site/data/**"]   # don't loop on the bot's own data commits
+
+concurrency:
+  group: hkpr-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write             # commit refreshed site/data
+  pages: write                # deploy to Pages
+  id-token: write             # Pages OIDC
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Refresh data + news (+ email brief)
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
+        run: python pipeline/run_all.py
+
+      - name: Commit refreshed data (keeps the schedule alive)
+        run: |
+          git config user.name  "hkpr-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add site/data
+          git commit -m "data: refresh $(date -u +%Y-%m-%d)" || echo "no data changes"
+          git push || echo "nothing to push"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

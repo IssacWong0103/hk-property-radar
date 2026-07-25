@@ -1,0 +1,12 @@
+# HK Property Radar — pipeline dependencies (run in GitHub Actions)
+pandas>=2.0
+plotly>=5.20          # figure JSON helpers (optional; site renders with Plotly.js)
+openpyxl>=3.1         # read .xlsx RVD workbooks
+xlrd>=2.0             # read legacy .xls RVD workbooks
+requests>=2.31
+feedparser>=6.0       # RSS news retrieval
+python-dateutil>=2.9
+openai>=1.30          # DeepSeek API (OpenAI-compatible client)
+# Optional (enable later):
+# tavily-python>=0.3  # broader news search (free tier)
+# chromadb>=0.5       # local RAG vector store

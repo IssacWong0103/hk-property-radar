@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>HK Property Radar</title>
+  <meta name="description" content="Hong Kong residential price & rent trends across the 18 districts — for a family buyer/renter.">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="HK Property">
+  <link rel="stylesheet" href="styles.css?v=3">
+  <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🏙️</span>
+      <div class="brand-text">
+        <h1>HK Property Radar</h1>
+        <p class="tagline">HK homes across the 18 districts — where &amp; when to buy or rent</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="dataStamp" class="stamp" title="Latest data period"></span>
+      <button id="themeBtn" class="icon-btn" aria-label="Toggle dark mode" title="Toggle dark mode">◐</button>
+      <button id="settingsBtn" class="icon-btn" aria-label="Settings" title="Email brief settings">⚙</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button class="tab is-active" data-tab="home" role="tab">Home</button>
+    <button class="tab" data-tab="districts" role="tab">Districts</button>
+    <button class="tab" data-tab="rentbuy" role="tab">Rent vs Buy</button>
+    <button class="tab" data-tab="market" role="tab">Market</button>
+    <button class="tab" data-tab="news" role="tab">News</button>
+  </nav>
+
+  <main id="main">
+    <!-- HOME -->
+    <section class="tabpane is-active" id="pane-home">
+      <div id="kpis" class="kpi-grid"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2>Home price vs rent — long-run trend</h2>
+          <span class="card-sub" id="homeIdxSub"></span>
+        </div>
+        <div id="homeIndexChart" class="chart"></div>
+        <p class="note">Index, 1999 = 100 (RVD, all flat classes). Both lines share one scale.</p>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h2>Cheapest vs priciest districts</h2><span class="card-sub">new-launch $/sq.ft</span></div>
+          <div id="homeDistrictChart" class="chart chart-sm"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Latest headlines</h2><a class="card-link" data-goto="news">See all →</a></div>
+          <div id="homeNews" class="mini-news"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DISTRICTS -->
+    <section class="tabpane" id="pane-districts">
+      <div class="card">
+        <div class="card-head">
+          <h2>Where to buy — the 18 districts</h2>
+          <span class="card-sub">primary-market new launches</span>
+        </div>
+        <div class="controls">
+          <label>Region
+            <select id="distRegion">
+              <option value="all">All Hong Kong</option>
+              <option value="HK Island">HK Island</option>
+              <option value="Kowloon">Kowloon</option>
+              <option value="New Territories">New Territories</option>
+            </select>
+          </label>
+          <label>Show
+            <select id="distMetric">
+              <option value="avg_psf">Avg price ($/sq.ft)</option>
+              <option value="remaining">Unsold units (choice left)</option>
+              <option value="units">Total new units</option>
+            </select>
+          </label>
+        </div>
+        <div id="districtChart" class="chart"></div>
+        <p class="note" id="districtNote"></p>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>District detail</h2><span class="card-sub">tap a column header to sort</span></div>
+        <div class="table-wrap"><table id="districtTable" class="data-table"></table></div>
+      </div>
+    </section>
+
+    <!-- RENT VS BUY -->
+    <section class="tabpane" id="pane-rentbuy">
+      <div class="card">
+        <div class="card-head">
+          <h2>Rent vs buy — by flat size</h2>
+          <span class="card-sub" id="rbSub"></span>
+        </div>
+        <div class="controls">
+          <label>Flat size
+            <select id="rbClass"></select>
+          </label>
+        </div>
+        <div id="rentBuyChart" class="chart"></div>
+        <p class="note">Price &amp; rent indices (1999 = 100) on one scale. When the blue price line pulls far above orange rent, buying is relatively expensive vs renting.</p>
+      </div>
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h2>Gross rental yield</h2><span class="card-sub" id="yieldSub"></span></div>
+          <div id="yieldChart" class="chart chart-sm"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>What it costs today</h2><span class="card-sub" id="avgSub"></span></div>
+          <div class="table-wrap"><table id="avgTable" class="data-table"></table></div>
+          <p class="note">RVD average transacted price, HK$ per m² (÷ 10.76 for $/sq.ft).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- MARKET -->
+    <section class="tabpane" id="pane-market">
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h2>Mortgage cost — 1M HIBOR</h2><span class="card-sub" id="hiborSub"></span></div>
+          <div id="hiborChart" class="chart chart-sm"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Transactions — primary vs secondary</h2><span class="card-sub">quarterly agreements</span></div>
+          <div id="volumeChart" class="chart chart-sm"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>New supply — completions</h2><span class="card-sub">private units / year</span></div>
+          <div id="completionsChart" class="chart chart-sm"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Vacancy rate</h2><span class="card-sub">% of private stock</span></div>
+          <div id="vacancyChart" class="chart chart-sm"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- NEWS -->
+    <section class="tabpane" id="pane-news">
+      <div class="card" id="top3Card">
+        <div class="card-head"><h2>Top 3 moves this week</h2><span class="card-sub">AI brief · DeepSeek</span></div>
+        <div id="top3" class="top3"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Latest HK property news</h2></div>
+        <div id="newsFeed" class="news-feed"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- SETTINGS -->
+  <div class="modal-backdrop" id="settingsModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+      <div class="modal-head">
+        <h2 id="setTitle">Email brief</h2>
+        <button class="icon-btn" id="settingsClose" aria-label="Close">✕</button>
+      </div>
+      <p class="note">Get the “Top 3 moves” emailed to you automatically. Turn it on or off any time — nothing else changes.</p>
+      <label class="field">Your email
+        <input type="email" id="setEmail" placeholder="name@example.com" autocomplete="email">
+      </label>
+      <label class="toggle-row">
+        <span>Email brief</span>
+        <input type="checkbox" id="setToggle" class="switch">
+      </label>
+      <button class="btn-primary" id="setSave">Save</button>
+      <p class="note" id="setStatus"></p>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span>Data: HK Rating &amp; Valuation Dept · Land Registry · HKAB · HKEX. News summarised by AI — verify via source links.</span>
+  </footer>
+
+  <script src="app.js?v=3"></script>
+</body>
+</html>
