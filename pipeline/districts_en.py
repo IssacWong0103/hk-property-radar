@@ -122,3 +122,72 @@ def area_en(cn: str) -> str:
 
 def area_district(cn: str):
     return AREA.get(str(cn), (None, None))[1]
+
+
+# English names for the mega-estates that dominate second-hand turnover. The
+# Centaline feed reports estates only in Chinese; this is a best-effort
+# convenience layer for a non-Chinese-reading buyer. Matched by prefix, so
+# phased estates (e.g. "日出康城 4期A 晉海") still resolve to the parent name.
+# The long tail keeps its Chinese name — extend this map as needed.
+ESTATE_EN = {
+    "太古城": "Taikoo Shing",
+    "康怡花園": "Kornhill",
+    "杏花邨": "Heng Fa Chuen",
+    "鰂魚涌": "Quarry Bay",
+    "城市花園": "City Garden",
+    "海怡半島": "South Horizons",
+    "貝沙灣": "Residence Bel-Air",
+    "美孚新邨": "Mei Foo Sun Chuen",
+    "黃埔花園": "Whampoa Garden",
+    "海濱南岸": "Harbour Place",
+    "昇悅居": "Liberte",
+    "宇晴軒": "The Merton",
+    "又一居": "Yau Yat Chuen",
+    "淘大花園": "Amoy Gardens",
+    "德福花園": "Telford Gardens",
+    "麗港城": "Laguna City",
+    "匯景花園": "Sceneway Garden",
+    "藍田": "Lam Tin",
+    "沙田第一城": "City One Shatin",
+    "第一城": "City One Shatin",
+    "新港城": "Sunshine City",
+    "銀禧花園": "Jubilee Garden",
+    "美田": "Mei Tin",
+    "帝堡城": "Palazzo",
+    "日出康城": "LOHAS Park",
+    "新都城": "Metro City",
+    "東港城": "East Point City",
+    "將軍澳中心": "Tseung Kwan O Plaza",
+    "嘉湖山莊": "Kingswood Villas",
+    "YOHO": "YOHO",
+    "形點": "YOHO",
+    "藍天海岸": "Caribbean Coast",
+    "映灣園": "Caribbean Coast",
+    "珀麗灣": "Park Island",
+    "愉景灣": "Discovery Bay",
+    "荃灣中心": "Tsuen Wan Centre",
+    "綠楊新邨": "Luk Yeung Sun Chuen",
+    "麗城花園": "Belvedere Garden",
+    "海之戀": "Ocean Pride",
+    "泓都": "The Hermitage",
+    "凱滙": "Grand Central",
+    "天晉": "The Wings",
+    "天賦海灣": "Providence Bay",
+    "逸瓏灣": "Mayfair by the Sea",
+    "宏福苑": "Wang Fuk Court",
+    "大埔中心": "Tai Po Centre",
+    "太和": "Tai Wo",
+    "粉嶺中心": "Fanling Centre",
+    "牽晴間": "Serenity Place",
+}
+
+
+def estate_en(name: str):
+    """Best-effort English name for a Centaline estate label, by longest prefix
+    match; None when unknown (caller keeps the Chinese name)."""
+    s = str(name or "").strip()
+    best = None
+    for cn, en in ESTATE_EN.items():
+        if s.startswith(cn) and (best is None or len(cn) > len(best[0])):
+            best = (cn, en)
+    return best[1] if best else None

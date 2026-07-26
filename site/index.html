@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="HK Property">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=6">
   <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" charset="utf-8"></script>
 </head>
 <body>
@@ -32,7 +32,8 @@
   </header>
 
   <nav class="tabs" id="tabs" role="tablist">
-    <button class="tab is-active" data-tab="home" role="tab">Home</button>
+    <button class="tab is-active" data-tab="afford" role="tab">Affordability</button>
+    <button class="tab" data-tab="home" role="tab">Home</button>
     <button class="tab" data-tab="districts" role="tab">Districts</button>
     <button class="tab" data-tab="rentbuy" role="tab">Rent vs Buy</button>
     <button class="tab" data-tab="market" role="tab">Market</button>
@@ -40,8 +41,78 @@
   </nav>
 
   <main id="main">
+    <!-- AFFORDABILITY -->
+    <section class="tabpane is-active" id="pane-afford">
+      <div class="card">
+        <div class="card-head">
+          <h2>What can you actually afford?</h2>
+          <span class="card-sub">stays on this device</span>
+        </div>
+        <div class="af-form">
+          <label class="field">Your age
+            <input type="number" id="afAge" inputmode="numeric" placeholder="52" min="18" max="80">
+          </label>
+          <label class="field">Monthly income (HK$)
+            <input type="number" id="afIncome" inputmode="numeric" placeholder="120000">
+          </label>
+          <label class="field">Other monthly loan payments (HK$)
+            <input type="number" id="afDebt" inputmode="numeric" placeholder="0">
+          </label>
+          <label class="field">Cash available (HK$)
+            <input type="number" id="afCash" inputmode="numeric" placeholder="5000000">
+          </label>
+          <label class="field">Target flat size (sq.ft)
+            <input type="number" id="afSize" inputmode="numeric" placeholder="700">
+          </label>
+          <label class="field">Mortgage rate (%)
+            <input type="number" id="afRate" inputmode="decimal" step="0.01" placeholder="4.10">
+          </label>
+        </div>
+        <label class="toggle-row af-toggle">
+          <span>My income is paid outside Hong Kong</span>
+          <input type="checkbox" id="afOverseas" class="switch">
+        </label>
+        <div class="af-actions">
+          <button class="btn-ghost" id="afReset">Clear</button>
+          <p class="note">Nothing you type here is uploaded or saved anywhere but this browser.</p>
+        </div>
+      </div>
+
+      <div class="card" id="afHeadlineCard">
+        <div id="afHeadline"></div>
+      </div>
+
+      <div id="afInsights" class="af-insights"></div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-head"><h2>Cash needed to complete</h2><span class="card-sub">one-off</span></div>
+          <div class="table-wrap"><table id="afCashTable" class="data-table af-table"></table></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>What it costs each month</h2><span class="card-sub">ongoing</span></div>
+          <div class="table-wrap"><table id="afMonthlyTable" class="data-table af-table"></table></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Districts within reach</h2>
+          <span class="card-sub" id="afReachSub"></span>
+        </div>
+        <div class="table-wrap"><table id="afReach" class="data-table"></table></div>
+        <p class="note">Typical price = district median second-hand $/sq.ft × your target size. A district
+        median spans very different estates — treat this as a shortlist, not a valuation.</p>
+      </div>
+
+      <p class="note af-legal">Rules current as of July 2026: 70% LTV cap (HKMA, 16 Oct 2024); tenor
+      75 minus age, capped at 30 years; AVD Scale 2 per the
+      <a href="https://www.gov.hk/en/residents/taxes/stamp/stamp_duty_rates.htm" target="_blank" rel="noopener">GovHK rate table</a>.
+      Estimates only — not financial advice. Confirm with your bank and solicitor before committing.</p>
+    </section>
+
     <!-- HOME -->
-    <section class="tabpane is-active" id="pane-home">
+    <section class="tabpane" id="pane-home">
       <div id="kpis" class="kpi-grid"></div>
       <div class="card">
         <div class="card-head">
@@ -65,7 +136,24 @@
 
     <!-- DISTRICTS -->
     <section class="tabpane" id="pane-districts">
-      <div class="card">
+      <div class="card" id="mapCard">
+        <div class="card-head">
+          <h2>Map — where to buy</h2>
+          <span class="card-sub" id="mapSub">second-hand median $/sq.ft</span>
+        </div>
+        <div class="controls">
+          <label>Colour by
+            <select id="mapMode">
+              <option value="price">Median $/sq.ft</option>
+              <option value="budget">Fits my budget</option>
+            </select>
+          </label>
+        </div>
+        <div id="mapWrap" class="map-wrap"></div>
+        <div id="mapLegend" class="map-legend"></div>
+        <p class="note" id="mapCaption">Tap a district to see its estates below.</p>
+      </div>
+      <div class="card" id="distBarCard">
         <div class="card-head">
           <h2>Where to buy — the 18 districts</h2>
           <span class="card-sub">second-hand median $/sq.ft</span>
@@ -92,6 +180,28 @@
       <div class="card">
         <div class="card-head"><h2>District detail</h2><span class="card-sub">tap a column header to sort</span></div>
         <div class="table-wrap"><table id="districtTable" class="data-table"></table></div>
+      </div>
+      <div class="card" id="estatesCard">
+        <div class="card-head">
+          <h2>Estates in <span id="estDistrictName">—</span></h2>
+          <span class="card-sub" id="estSub"></span>
+        </div>
+        <div class="controls">
+          <label>District
+            <select id="estDistrict"></select>
+          </label>
+          <label>Sort by
+            <select id="estSort">
+              <option value="deals">Most transactions</option>
+              <option value="psf_asc">$/sq.ft — low first</option>
+              <option value="psf_desc">$/sq.ft — high first</option>
+              <option value="built_desc">Newest building</option>
+              <option value="built_asc">Oldest building</option>
+            </select>
+          </label>
+        </div>
+        <div class="table-wrap"><table id="estatesTable" class="data-table"></table></div>
+        <p class="note" id="estNote"></p>
       </div>
     </section>
 
@@ -182,6 +292,7 @@
     <span>Data: HK Rating &amp; Valuation Dept · Land Registry · HKAB · HKEX. News summarised by AI — verify via source links.</span>
   </footer>
 
-  <script src="app.js?v=4"></script>
+  <script src="afford.js?v=2"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

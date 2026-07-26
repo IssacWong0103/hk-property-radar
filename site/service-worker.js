@@ -1,7 +1,7 @@
 /* HK Property Radar — network-first so YR always gets the latest data & code when
    online; the cache is only an offline fallback. (A data dashboard values freshness
    over micro-perf.) Cross-origin (Plotly CDN) is left to the browser. */
-const CACHE = 'hkpr-v2';
+const CACHE = 'hkpr-v3';
 const PRECACHE = ['./', 'index.html', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png'];
 
 self.addEventListener('install', e => {
