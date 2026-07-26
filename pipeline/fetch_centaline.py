@@ -25,10 +25,12 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import statistics
 import time
 import urllib.error
 import urllib.request
+from collections import Counter, defaultdict
 
 from common import CLEAN_DIR
 
@@ -71,11 +73,11 @@ DISTRICT_BY_CODE = {
 CN_TO_CODE = {cn: code for code, (cn, _en, _reg) in DISTRICT_BY_CODE.items()}
 
 
-def _post(body: dict, tries: int = 3):
+def _post(body: dict, tries: int = 3, headers: dict | None = None):
     data = json.dumps(body).encode()
     for i in range(tries):
         try:
-            req = urllib.request.Request(API, data=data, headers=HEADERS, method="POST")
+            req = urllib.request.Request(API, data=data, headers=headers or HEADERS, method="POST")
             with urllib.request.urlopen(req, timeout=45) as r:
                 return json.loads(r.read().decode("utf-8", "replace"))
         except (urllib.error.URLError, TimeoutError, ValueError):
@@ -83,6 +85,9 @@ def _post(body: dict, tries: int = 3):
                 raise
             time.sleep(1.0 + i)
     return None
+
+
+_YEAR_RE = re.compile(r"(\d{4})")
 
 
 def _district_code(rec) -> str | None:
@@ -99,9 +104,55 @@ def _district_code(rec) -> str | None:
     return None
 
 
-def fetch_psf_by_district() -> dict:
-    """Page the recent second-hand sales → {district_code: [psf, ...]}."""
-    buckets: dict[str, list] = {}
+def _estate_name(rec) -> str:
+    """Canonical estate label. Centaline splits phased developments so the phase
+    ('1期') lands in estateName and the real estate in bigEstateName — keying on
+    estateName alone would merge different estates' phases, so combine them.
+      Phase  → "<big estate> <phase>"   e.g. 日出康城 4期A 晉海
+      Normal → estateName               e.g. 昇悅居
+      Single → buildingName             e.g. 鑽嶺
+    """
+    big = (rec.get("bigEstateName") or "").strip()
+    est = (rec.get("estateName") or "").strip()
+    bld = (rec.get("buildingName") or "").strip()
+    if rec.get("estateType") == "Phase" and big:
+        return f"{big} {est}".strip()
+    return est or bld
+
+
+def _built_year(rec):
+    m = _YEAR_RE.search(str(rec.get("opYear") or ""))
+    return int(m.group(1)) if m else None
+
+
+def _norm(rec) -> dict | None:
+    """Reduce one API record to the fields we keep, applying the same quality
+    gates as before; None drops the row."""
+    if rec.get("firstOrSecondHand") != "SecondHand":
+        return None
+    code = _district_code(rec)
+    if not code:
+        return None
+    area, price = rec.get("nArea"), rec.get("transactionPrice")
+    if not area or not price or area < AREA_MIN:
+        return None
+    # Centaline's own saleable $/sq.ft when present, else compute it.
+    psf = rec.get("nUnitPrice") or (price / area)
+    try:
+        psf = float(psf)
+    except (TypeError, ValueError):
+        return None
+    if not (PSF_MIN <= psf <= PSF_MAX):
+        return None
+    return {"id": rec.get("id"), "code": code, "estate": _estate_name(rec),
+            "en": "", "built": _built_year(rec),
+            "psf": psf, "price": float(price), "area": float(area),
+            "url": rec.get("detailUrl") or ""}
+
+
+def fetch_records() -> list[dict]:
+    """Page the recent second-hand sales → list of normalised deal records."""
+    out: list[dict] = []
     seen: set = set()
     for page in range(MAX_PAGES):
         body = {"postType": "Sale", "day": f"Day{DAYS}", "sort": "InsOrRegDate",
@@ -114,57 +165,125 @@ def fetch_psf_by_district() -> dict:
             if rid in seen:
                 continue
             seen.add(rid)
-            if rec.get("firstOrSecondHand") != "SecondHand":
-                continue
-            code = _district_code(rec)
-            if not code:
-                continue
-            area, price = rec.get("nArea"), rec.get("transactionPrice")
-            if not area or not price or area < AREA_MIN:
-                continue
-            psf = price / area
-            if PSF_MIN <= psf <= PSF_MAX:
-                buckets.setdefault(code, []).append(psf)
+            nr = _norm(rec)
+            if nr:
+                out.append(nr)
         if len(data) < PAGE:
             break
         time.sleep(DELAY)
-    return buckets
+    return out
 
 
-def write_csv(buckets: dict) -> str:
+def fetch_en_names() -> dict:
+    """Second pass with the `Lang: EN` header — the API returns the official
+    English estate name for the same records. Pair by transaction id → {id: en}.
+    Best-effort: any failure leaves estates on their Chinese name + curated map."""
+    headers = {**HEADERS, "Lang": "EN"}
+    out: dict[str, str] = {}
+    seen: set = set()
+    for page in range(MAX_PAGES):
+        body = {"postType": "Sale", "day": f"Day{DAYS}", "sort": "InsOrRegDate",
+                "order": "Descending", "size": PAGE, "offset": page * PAGE, "pageSource": "search"}
+        data = (_post(body, headers=headers) or {}).get("data") or []
+        if not data:
+            break
+        for rec in data:
+            rid = rec.get("id")
+            if rid in seen:
+                continue
+            seen.add(rid)
+            if rec.get("firstOrSecondHand") != "SecondHand":
+                continue
+            name = _estate_name(rec)
+            if name:
+                out[rid] = name
+        if len(data) < PAGE:
+            break
+        time.sleep(DELAY)
+    return out
+
+
+def write_district_csv(records: list[dict]) -> str:
+    """(17): median saleable $/sq.ft + transaction count per district. Unchanged
+    schema — build_figures.build_districts() still reads exactly this."""
+    buckets: dict[str, list] = defaultdict(list)
+    for r in records:
+        buckets[r["code"]].append(r["psf"])
     rows = []
     for code, (cn, _en, reg) in DISTRICT_BY_CODE.items():
         vals = buckets.get(code) or []
         if not vals:
             continue
-        rows.append({
-            "地區": cn,
-            "區域": reg,
-            "單位總數": len(vals),                       # sample size (transactions), reused as the psf weight
-            "二手成交中位呎價": round(statistics.median(vals)),
-        })
-    os.makedirs(CLEAN_DIR, exist_ok=True)
+        rows.append({"地區": cn, "區域": reg, "單位總數": len(vals),
+                     "二手成交中位呎價": round(statistics.median(vals))})
     path = os.path.join(CLEAN_DIR, "(17)Centaline_secondhand_districts.csv")
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["地區", "區域", "單位總數", "二手成交中位呎價"])
-        w.writeheader()
-        w.writerows(rows)
+    _write_csv(path, ["地區", "區域", "單位總數", "二手成交中位呎價"], rows)
     print(f"  wrote {os.path.basename(path)} ({len(rows)} districts)")
     return path
+
+
+def write_estate_csv(records: list[dict]) -> str:
+    """(18): one row per estate within a district — median $/sq.ft, median price,
+    built year, size range, sample size and a link to the underlying deals."""
+    groups: dict[tuple, list] = defaultdict(list)
+    for r in records:
+        if r["estate"]:
+            groups[(r["code"], r["estate"])].append(r)
+    rows = []
+    for (code, estate), items in groups.items():
+        cn, _en, reg = DISTRICT_BY_CODE[code]
+        builts = [x["built"] for x in items if x["built"]]
+        areas = [x["area"] for x in items]
+        # Official English name from the EN pass; most common non-empty wins.
+        en_names = [x["en"] for x in items if x.get("en")]
+        estate_en = Counter(en_names).most_common(1)[0][0] if en_names else ""
+        rows.append({
+            "地區": cn, "區域": reg, "屋苑": estate, "屋苑英文": estate_en,
+            "落成年份": min(builts) if builts else "",
+            "成交宗數": len(items),
+            "中位呎價": round(statistics.median(x["psf"] for x in items)),
+            "中位售價": round(statistics.median(x["price"] for x in items)),
+            "最細面積": round(min(areas)),
+            "最大面積": round(max(areas)),
+            "細節連結": next((x["url"] for x in items if x["url"]), ""),
+        })
+    # District, then most-traded estate first.
+    order = {c: i for i, c in enumerate(DISTRICT_BY_CODE)}
+    rows.sort(key=lambda r: (order.get(CN_TO_CODE.get(r["地區"], "Z"), 99), -r["成交宗數"]))
+    path = os.path.join(CLEAN_DIR, "(18)Centaline_secondhand_estates.csv")
+    _write_csv(path, ["地區", "區域", "屋苑", "屋苑英文", "落成年份", "成交宗數",
+                      "中位呎價", "中位售價", "最細面積", "最大面積", "細節連結"], rows)
+    print(f"  wrote {os.path.basename(path)} ({len(rows)} estates)")
+    return path
+
+
+def _write_csv(path: str, fields: list[str], rows: list[dict]) -> None:
+    os.makedirs(CLEAN_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(rows)
 
 
 def main():
     try:
         print(f"Fetching Centaline second-hand sales (last {DAYS} days) …")
-        buckets = fetch_psf_by_district()
-        covered = sum(1 for c in DISTRICT_BY_CODE if buckets.get(c))
-        total = sum(len(v) for v in buckets.values())
-        print(f"  {total:,} second-hand sales across {covered}/18 districts")
+        records = fetch_records()
+        covered = len({r["code"] for r in records})
+        print(f"  {len(records):,} second-hand sales across {covered}/18 districts")
         if covered < MIN_DISTRICTS:
-            print(f"  (fetch_centaline: only {covered}/18 districts — keeping last-good (17), not overwriting)")
+            print(f"  (fetch_centaline: only {covered}/18 districts — keeping last-good, not overwriting)")
             return
-        write_csv(buckets)
-        print("Done — 18-district second-hand $/sq.ft refreshed from Centaline.")
+        try:
+            en = fetch_en_names()   # {id: official English estate name}
+            for r in records:
+                r["en"] = en.get(r["id"], "")
+            print(f"  matched {sum(1 for r in records if r['en']):,}/{len(records):,} deals to English names")
+        except Exception as e:  # noqa: BLE001 — English is a nice-to-have, never fatal
+            print(f"  (English name pass failed [{type(e).__name__}] — falling back to Chinese + curated map)")
+        write_district_csv(records)
+        write_estate_csv(records)
+        print("Done — district + estate second-hand $/sq.ft refreshed from Centaline.")
     except Exception as e:  # noqa: BLE001 — a scraper hiccup must never break the build
         print(f"  (fetch_centaline: failed [{type(e).__name__}: {e}] — keeping last-good district data)")
 

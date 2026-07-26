@@ -12,9 +12,14 @@ const PALETTE = {
         grid:'#2c2c2a',baseline:'#383835',s1:'#3987e5',s2:'#d95926',s3:'#199e70',success:'#0ca30c'},
 };
 const REGION_SLOT = {'HK Island':'s1','Kowloon':'s2','New Territories':'s3'};
+const DISTRICT_ORDER = ['Central & Western','Wan Chai','Eastern','Southern',
+  'Yau Tsim Mong','Sham Shui Po','Kowloon City','Wong Tai Sin','Kwun Tong',
+  'Kwai Tsing','Tsuen Wan','Tuen Mun','Yuen Long','North','Tai Po','Sha Tin',
+  'Sai Kung','Islands'];
 const CFG = {displayModeBar:false, responsive:true};
 
 const state = {};              // cached JSON
+window.state = state;          // afford.js reads district + HIBOR data from here
 const rendered = new Set();    // tabs already drawn
 
 /* ---------- theme ---------- */
@@ -109,9 +114,9 @@ function drawDistricts(){
   const regionsMode = d.totals && d.totals.mode === 'regions';
   const region = $('#distRegion').value;
   const metric = regionsMode ? 'avg_psf' : $('#distMetric').value;
-  document.querySelector('#pane-districts .card-head h2').textContent =
+  document.querySelector('#distBarCard .card-head h2').textContent =
     regionsMode ? 'Where to buy — by region (official)' : 'Where to buy — the 18 districts';
-  document.querySelector('#pane-districts .card-sub').textContent =
+  document.querySelector('#distBarCard .card-sub').textContent =
     regionsMode ? 'RVD average price, family flats' : 'second-hand median $/sq.ft';
   $('#distMetric').parentElement.style.display = regionsMode ? 'none' : '';
   let rows = d.by_district || [];
@@ -125,6 +130,197 @@ function drawDistricts(){
     ? [['district','Region'],['avg_psf','$/sq.ft']]
     : [['district','District'],['region','Region'],['avg_psf','$/sq.ft'],['units','Transactions']];
   buildTable('#districtTable', cols, d.by_district || [], region);
+  drawMap();
+  drawEstates();
+}
+
+/* ---------- Map (SVG choropleth of the 18 districts) ---------- */
+const MAP_W = 1000, MAP_PAD = 8;
+let mapSelected = null;
+
+function _projector(bbox){
+  const [minx,miny,maxx,maxy] = bbox;
+  const kx = Math.cos((miny+maxy)/2 * Math.PI/180);   // longitude shrinks toward the poles
+  const gw = (maxx-minx)*kx, gh = (maxy-miny);
+  const s = (MAP_W - 2*MAP_PAD) / gw;
+  const H = gh*s + 2*MAP_PAD;
+  return {H, p:(x,y)=>[MAP_PAD+(x-minx)*kx*s, MAP_PAD+(maxy-y)*s]};
+}
+function _ringPath(flat, proj){
+  let d = '';
+  for (let i=0;i<flat.length;i+=2){
+    const [px,py] = proj(flat[i],flat[i+1]);
+    d += (i?'L':'M') + px.toFixed(1) + ' ' + py.toFixed(1);
+  }
+  return d + 'Z';
+}
+function _hex(h){ h=h.replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function _mix(a,b,t){ const A=_hex(a),B=_hex(b);
+  return `rgb(${A.map((v,i)=>Math.round(v+(B[i]-v)*t)).join(',')})`; }
+
+function drawMap(){
+  const geo = state.districts_geo, card = $('#mapCard');
+  if (!geo || !geo.districts || !geo.districts.length){ card.style.display='none'; return; }
+  card.style.display = '';
+  const c = C();
+  const priced = {};
+  (state.districts.by_district||[]).forEach(d=>{ priced[d.district] = d; });
+
+  const mode = $('#mapMode').value;
+  const snap = window.HKAfford && window.HKAfford.snapshot ? window.HKAfford.snapshot() : null;
+  const size = snap && snap.sizeSqft>0 ? snap.sizeSqft : null;
+  // Budget mode needs the affordability inputs; fall back to price if absent.
+  const budgetMode = mode==='budget' && snap && size;
+  $('#mapMode').options[1].disabled = !(snap && size);
+
+  const vals = geo.districts.map(d=>priced[d.name]&&priced[d.name].avg_psf).filter(v=>v!=null);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const pale = theme()==='dark' ? '#22303f' : '#e8f0fb';
+
+  function fill(name){
+    const rec = priced[name];
+    if (!rec || rec.avg_psf==null) return theme()==='dark'?'#2c2c2a':'#ecebe5';   // no data
+    if (budgetMode){
+      const typical = rec.avg_psf*size;
+      if (typical <= snap.maxPrice) return c.s3;                    // fits
+      if (typical <= snap.maxPrice*1.15) return c.s2;               // just over
+      return theme()==='dark'?'#3a2a24':'#f2ddd3';                  // well over
+    }
+    const t = hi>lo ? (rec.avg_psf-lo)/(hi-lo) : 0.5;
+    return _mix(pale, c.s1, 0.15+0.85*t);                          // sequential price ramp
+  }
+
+  const {H, p} = _projector(geo.bbox);
+  const paths = geo.districts.map(d=>{
+    const dd = d.rings.map(r=>_ringPath(r,p)).join('');
+    const sel = d.name===mapSelected ? ' is-sel' : '';
+    return `<path class="dpath${sel}" d="${dd}" fill="${fill(d.name)}" `+
+           `data-name="${d.name}"><title>${d.name}${priced[d.name]&&priced[d.name].avg_psf!=null?
+             ' · $'+fmt(priced[d.name].avg_psf)+'/sq.ft':' · no data'}</title></path>`;
+  }).join('');
+  $('#mapWrap').innerHTML =
+    `<svg viewBox="0 0 ${MAP_W} ${Math.round(H)}" class="hkmap" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Map of Hong Kong's 18 districts">${paths}</svg>`;
+
+  // Legend
+  if (budgetMode){
+    $('#mapSub').textContent = `fits a ${size} sq.ft flat on your budget`;
+    $('#mapLegend').innerHTML =
+      `<span class="lg"><i style="background:${c.s3}"></i>Within budget</span>`+
+      `<span class="lg"><i style="background:${c.s2}"></i>Just over (≤15%)</span>`+
+      `<span class="lg"><i style="background:${theme()==='dark'?'#3a2a24':'#f2ddd3'}"></i>Well over</span>`;
+  } else {
+    $('#mapSub').textContent = 'second-hand median $/sq.ft';
+    $('#mapLegend').innerHTML =
+      `<span class="lg-scale"><b>$${fmt(lo)}</b>`+
+      `<i class="ramp" style="background:linear-gradient(90deg,${_mix(pale,c.s1,0.15)},${c.s1})"></i>`+
+      `<b>$${fmt(hi)}</b><small>/sq.ft</small></span>`;
+  }
+
+  // Interactions
+  $('#mapWrap').querySelectorAll('.dpath').forEach(el=>{
+    const name = el.dataset.name;
+    el.onmouseenter = ()=>{ const r=priced[name];
+      $('#mapCaption').innerHTML = r&&r.avg_psf!=null
+        ? `<strong>${name}</strong> · ${r.region||''} · $${fmt(r.avg_psf)}/sq.ft · ${fmt(r.units)} deals`
+        : `<strong>${name}</strong> · no recent second-hand data`; };
+    el.onclick = ()=>selectDistrictOnMap(name);
+  });
+}
+
+function selectDistrictOnMap(name){
+  mapSelected = name;
+  $('#mapWrap').querySelectorAll('.dpath').forEach(el=>
+    el.classList.toggle('is-sel', el.dataset.name===name));
+  // Drive the estate drill-down to the clicked district.
+  const sel = $('#estDistrict');
+  if (sel && [...sel.options].some(o=>o.value===name)){
+    sel.value = name; renderEstateTable();
+    $('#estatesCard').scrollIntoView({behavior:'smooth', block:'start'});
+  }
+}
+
+/* ---------- Estate drill-down (district → estates) ---------- */
+const ESTATE_SORTS = {
+  deals:      (a,b)=>(b.deals||0)-(a.deals||0) || (b.psf||0)-(a.psf||0),
+  psf_asc:    (a,b)=>(a.psf||Infinity)-(b.psf||Infinity),
+  psf_desc:   (a,b)=>(b.psf||0)-(a.psf||0),
+  built_desc: (a,b)=>(b.built||0)-(a.built||0),
+  built_asc:  (a,b)=>(a.built||Infinity)-(b.built||Infinity),
+};
+
+function drawEstates(){
+  const est = state.estates;
+  const card = $('#estatesCard');
+  if (!est || !est.by_district || !Object.keys(est.by_district).length){
+    card.style.display = 'none'; return;
+  }
+  card.style.display = '';
+
+  // Populate the district picker once, ordered like the official 18-district list.
+  const sel = $('#estDistrict');
+  const available = DISTRICT_ORDER.filter(name => est.by_district[name]);
+  if (!sel.options.length){
+    available.forEach(name=>{
+      const o=document.createElement('option'); o.value=name; o.textContent=name; sel.appendChild(o);
+    });
+    // Follow the Districts filter if it names a single region: pick its priciest.
+    sel.onchange = renderEstateTable;
+    $('#estSort').onchange = renderEstateTable;
+  }
+  if (!sel.value || !est.by_district[sel.value]) sel.value = available[0];
+  renderEstateTable();
+}
+
+function renderEstateTable(){
+  const est = state.estates, c = C();
+  const district = $('#estDistrict').value;
+  const list = (est.by_district[district] || []).slice();
+  $('#estDistrictName').textContent = district;
+
+  const sortKey = $('#estSort').value;
+  list.sort(ESTATE_SORTS[sortKey] || ESTATE_SORTS.deals);
+
+  // Budget context from the Affordability tab, if the user has filled it in.
+  const snap = window.HKAfford && window.HKAfford.snapshot ? window.HKAfford.snapshot() : null;
+  const size = snap && snap.sizeSqft > 0 ? snap.sizeSqft : null;
+  const ceiling = snap ? snap.maxPrice : null;
+
+  const yr = new Date().getFullYear();
+  const psf = n => n==null ? '—' : '$'+fmt(n);
+  const money = n => n==null ? '—' : (n>=1e6 ? '$'+ (n/1e6).toLocaleString('en-US',{maximumFractionDigits:2})+'M' : '$'+fmt(n));
+
+  const head = `<thead><tr>
+    <th>Estate</th><th>Built</th><th>Size (sq.ft)</th><th>Median $/sq.ft</th>
+    ${size?`<th>Typical ${size} sq.ft</th>`:''}<th>Deals</th><th></th></tr></thead>`;
+
+  const body = list.map(e=>{
+    const typical = size && e.psf ? e.psf*size : null;
+    const over = ceiling && typical ? typical > ceiling : false;
+    const age = e.built ? `${e.built} · ${Math.max(0,yr-e.built)}y` : '—';
+    const name = e.name_en
+      ? `${e.name_en} <span class="est-cn">${e.name}</span>`
+      : `<span class="est-cn-only">${e.name}</span>`;
+    const link = e.url ? `<a href="${e.url}" target="_blank" rel="noopener" title="See the deals on Centaline">deals →</a>` : '';
+    const budgetCell = size
+      ? `<td>${money(typical)} ${ceiling?(over?'<span class="af-tag out">over</span>':'<span class="af-tag in">fits</span>'):''}</td>`
+      : '';
+    return `<tr class="${over?'af-out':''}">
+      <td>${name}</td><td>${age}</td>
+      <td>${e.area_min&&e.area_max?fmt(e.area_min)+'–'+fmt(e.area_max):'—'}</td>
+      <td>${psf(e.psf)}</td>${budgetCell}
+      <td>${fmt(e.deals)}</td><td class="est-link">${link}</td></tr>`;
+  }).join('');
+
+  $('#estatesTable').innerHTML = head + `<tbody>${body}</tbody>`;
+  $('#estSub').textContent = `${list.length} estates · second-hand`;
+
+  const thin = list.filter(e=>(e.deals||0)<3).length;
+  $('#estNote').innerHTML =
+    `Median saleable $/sq.ft per estate, last ~30 days. <strong>${thin}</strong> of ${list.length} `+
+    `estates here have fewer than 3 deals — treat those medians as indicative only. `+
+    (size?`“Typical ${size} sq.ft” = estate median $/sq.ft × your target size from the Affordability tab. `:``)+
+    `Source: Centaline (hk.centanet.com).`;
 }
 
 function buildTable(sel, cols, data, region){
@@ -238,7 +434,8 @@ function labelClass(cl){
 }
 
 /* ---------- tabs / theme ---------- */
-const DRAW = {home:drawHome, districts:drawDistricts, rentbuy:drawRentBuy, market:drawMarket, news:drawNews};
+const DRAW = {afford:()=>window.HKAfford.drawAfford(), home:drawHome, districts:drawDistricts,
+              rentbuy:drawRentBuy, market:drawMarket, news:drawNews};
 function showTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('is-active',t.dataset.tab===name));
   document.querySelectorAll('.tabpane').forEach(p=>p.classList.toggle('is-active',p.id==='pane-'+name));
@@ -251,6 +448,7 @@ function initEvents(){
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>showTab(t.dataset.tab));
   document.querySelectorAll('[data-goto]').forEach(a=>a.onclick=e=>{e.preventDefault();showTab(a.dataset.goto);});
   $('#distRegion').onchange=drawDistricts; $('#distMetric').onchange=drawDistricts;
+  $('#mapMode').onchange=drawMap;
   $('#themeBtn').onclick=()=>{
     const next = theme()==='dark'?'light':'dark';
     document.documentElement.setAttribute('data-theme',next);
@@ -282,14 +480,14 @@ async function saveSettings(){
 /* ---------- boot ---------- */
 async function boot(){
   const saved=localStorage.getItem('hkpr-theme'); if(saved) document.documentElement.setAttribute('data-theme',saved);
-  const files=['meta','kpis','price_rent_index','avg_price_rent','districts','volume','supply','macro','news','top3'];
+  const files=['meta','kpis','price_rent_index','avg_price_rent','districts','estates','districts_geo','volume','supply','macro','news','top3'];
   const results=await Promise.all(files.map(f=>fetch(`data/${f}.json`,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null)));
   files.forEach((f,i)=>state[f]=results[i]);
   if(state.meta&&state.meta.data_through){
     const d=new Date(state.meta.data_through);
     $('#dataStamp').textContent='Data to '+d.toLocaleDateString('en-GB',{month:'short',year:'numeric'});
   }
-  initEvents(); showTab('home');
+  initEvents(); window.HKAfford.initAfford(); showTab('afford');
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('service-worker.js').catch(()=>{});
 }
 document.addEventListener('DOMContentLoaded',boot);

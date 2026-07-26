@@ -27,10 +27,11 @@ from common import (
     num,
     yyyymm_to_iso,
 )
-from districts_en import DISTRICTS_18, area_district, area_en
+from districts_en import DISTRICT_REGION, DISTRICTS_18, area_district, area_en, estate_en
 
 ROUND_IDX = 1     # index values
 ROUND_YIELD = 2   # % yields
+MAX_ESTATES_PER_DISTRICT = 60   # cap the estate drill-down; drops the 1-deal long tail
 
 
 def _write(name: str, obj) -> None:
@@ -262,6 +263,75 @@ def build_districts() -> dict:
             "source": "Centaline second-hand transaction records — median saleable HK$/sq.ft by district (recent ~30 days)"}
 
 
+# --------------------------------------------------------------- estates (second-hand, by district)
+def build_estates() -> dict:
+    """Per-estate second-hand medians from (18), grouped under each official
+    English district. Powers the district → estate drill-down. Absent file →
+    FileNotFoundError, handled by safe() so the rest of the build proceeds."""
+    df = load_csv("(18)")
+    cols = list(df.columns)
+    c_dist = _find_col(cols, "地區")
+    c_estate_en = _find_col(cols, "屋苑英文")   # match the longer name before the substring "屋苑"
+    c_estate = next((c for c in cols if "屋苑" in str(c) and c != c_estate_en), None)
+    c_built = _find_col(cols, "落成")
+    c_deals = _find_col(cols, "成交宗數")
+    c_psf = _find_col(cols, "中位呎價")
+    c_price = _find_col(cols, "中位售價")
+    c_amin = _find_col(cols, "最細面積")
+    c_amax = _find_col(cols, "最大面積")
+    c_url = _find_col(cols, "細節連結")
+
+    by_district: dict[str, list] = {}
+    for _, r in df.iterrows():
+        en = area_district(str(r[c_dist]))
+        if not en:
+            continue
+        name_cn = str(r[c_estate]).strip()
+        if not name_cn or name_cn == "nan":
+            continue
+        built = num(pd.Series([r[c_built]])).iloc[0] if c_built else None
+        # Official English from the Centaline EN pass; fall back to the curated map.
+        api_en = str(r[c_estate_en]).strip() if c_estate_en and pd.notna(r[c_estate_en]) else ""
+        name_en = api_en or estate_en(name_cn)
+        est = {
+            "name": name_cn,
+            "name_en": name_en or None,
+            "built": int(built) if pd.notna(built) else None,
+            "deals": _r(num(pd.Series([r[c_deals]])).iloc[0], 0),
+            "psf": _r(num(pd.Series([r[c_psf]])).iloc[0], 0),
+            "price": _r(num(pd.Series([r[c_price]])).iloc[0], 0),
+            "area_min": _r(num(pd.Series([r[c_amin]])).iloc[0], 0),
+            "area_max": _r(num(pd.Series([r[c_amax]])).iloc[0], 0),
+            "url": str(r[c_url]).strip() if c_url and pd.notna(r[c_url]) else "",
+        }
+        by_district.setdefault(en, []).append(est)
+
+    total_estates = sum(len(v) for v in by_district.values())
+    total_deals = int(sum(e["deals"] or 0 for v in by_district.values() for e in v))
+
+    # Keep each district's most-traded estates and drop the long single-deal tail
+    # (a 1-deal median is noise, and 2,000+ estates bloat the offline payload).
+    for name, lst in by_district.items():
+        lst.sort(key=lambda e: (-(e["deals"] or 0), -(e["psf"] or 0)))
+        by_district[name] = lst[:MAX_ESTATES_PER_DISTRICT]
+
+    shown_estates = sum(len(v) for v in by_district.values())
+    totals = {
+        "estates": shown_estates,
+        "estates_total": total_estates,   # before the per-district cap
+        "deals": total_deals,
+        "districts": len(by_district),
+        "cap": MAX_ESTATES_PER_DISTRICT,
+    }
+    return {
+        "by_district": by_district,
+        "regions": {name: DISTRICT_REGION.get(name, "") for name in by_district},
+        "totals": totals,
+        "source": "Centaline second-hand transactions grouped by estate (recent ~30 days). "
+                  "A median over few deals is noisy — always read it with the transaction count.",
+    }
+
+
 # --------------------------------------------------------------- transaction volume
 def build_volume() -> dict:
     df = load_csv("(15)", "agreements")
@@ -396,6 +466,7 @@ def main():
     pri = build_price_rent_index()
     avg = build_avg_price_rent()
     dist = safe(build_districts, {"by_district": [], "areas": [], "totals": {}, "source": "live source pending"}, "districts")
+    est = safe(build_estates, {"by_district": {}, "regions": {}, "totals": {}, "source": "estate data pending"}, "estates")
     vol = safe(build_volume, {"periods": [], "primary": [], "secondary": []}, "volume")
     sup = safe(build_supply, {"years": [], "completions": [], "vacancy_pct": []}, "supply")
     macro = build_macro()
@@ -404,6 +475,7 @@ def main():
     _write("price_rent_index.json", pri)
     _write("avg_price_rent.json", avg)
     _write("districts.json", dist)
+    _write("estates.json", est)
     _write("volume.json", vol)
     _write("supply.json", sup)
     _write("macro.json", macro)
@@ -412,8 +484,10 @@ def main():
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "data_through": pri["periods"][-1] if pri["periods"] else None,
         "districts_source": dist["source"],
-        "notes": "Price/rent indices are RVD by flat-size class. District view is primary-market "
-                 "new launches; official RVD 18-district series pending source confirmation.",
+        "estates_source": est.get("source"),
+        "notes": "Price/rent indices are RVD by flat-size class (data through the latest published "
+                 "quarter). District and estate $/sq.ft are Centaline second-hand transaction "
+                 "medians over roughly the last 30 days — read them with the transaction count.",
     })
     print("Done.")
 
