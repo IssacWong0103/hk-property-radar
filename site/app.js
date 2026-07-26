@@ -391,16 +391,50 @@ function drawMarket(){
     hovertemplate:'%{x|%b %Y}<br>%{y:.2f}%<extra></extra>'}],
     {showlegend:false, yaxis:{ticksuffix:'%',gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}}});
   $('#hiborSub').textContent = mac.hibor.values.length?`${mac.hibor.values.at(-1)}% now`:'';
-  draw('volumeChart', [
-    {x:vol.periods, y:vol.primary, name:'Primary', type:'bar', marker:{color:c.s1}},
-    {x:vol.periods, y:vol.secondary, name:'Secondary', type:'bar', marker:{color:c.s2}},
-  ], {barmode:'group'});
+  // Total monthly residential transactions (Land Registry)
+  const vp=(vol&&vol.periods)||[], vt=(vol&&vol.total)||[];
+  draw('volumeChart', [{x:vp, y:vt, type:'bar', marker:{color:c.s1},
+    hovertemplate:'%{x|%b %Y}<br>%{y:,} deals<extra></extra>'}],
+    {showlegend:false, xaxis:{gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted},
+      range:vp.length?[vp[Math.max(0,vp.length-72)],vp.at(-1)]:undefined}});
+  if(vt.length) $('#volumeSub').textContent = `${fmt(vt.at(-1))} in ${new Date(vp.at(-1)).toLocaleDateString('en-GB',{month:'short',year:'numeric'})}`;
+
   draw('completionsChart', [{x:sup.years, y:sup.completions, type:'bar', marker:{color:c.s1},
     hovertemplate:'%{x}<br>%{y:,} units<extra></extra>'}], {showlegend:false});
-  const vy=sup.years.filter((y,i)=>sup.vacancy_pct[i]!=null), vv=sup.vacancy_pct.filter(v=>v!=null);
-  draw('vacancyChart', [{x:vy, y:vv, mode:'lines+markers', line:{color:c.s2,width:2}, marker:{size:6},
-    hovertemplate:'%{x}<br>%{y:.1f}%<extra></extra>'}],
-    {showlegend:false, yaxis:{ticksuffix:'%',gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}}});
+
+  // Vacancy by flat-size class (latest year) — the achievable granularity
+  const vc=sup.vacancy_class;
+  if(vc && vc.classes && vc.classes.length){
+    const labels=vc.classes.map(labelClass);
+    const latest=vc.classes.map(cl=>vc.latest[cl]);
+    draw('vacancyChart', [{x:labels, y:latest, type:'bar',
+      marker:{color:vc.classes.map((_,i)=>_mix(C().s3, C().s2, i/(vc.classes.length-1)))},
+      hovertemplate:'%{x}<br>%{y:.1f}% vacant<extra></extra>'}],
+      {showlegend:false, margin:{l:44,r:12,t:8,b:64},
+       xaxis:{tickangle:-25,gridcolor:'rgba(0,0,0,0)',linecolor:c.baseline,tickfont:{color:c.ink2,size:10.5}},
+       yaxis:{ticksuffix:'%',gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}}});
+    $('#vacancySub').textContent = `% vacant · ${vc.latest_year}`;
+  } else {
+    const vy=sup.years.filter((y,i)=>sup.vacancy_pct[i]!=null), vv=sup.vacancy_pct.filter(v=>v!=null);
+    draw('vacancyChart', [{x:vy, y:vv, mode:'lines+markers', line:{color:c.s2,width:2}, marker:{size:6},
+      hovertemplate:'%{x}<br>%{y:.1f}%<extra></extra>'}],
+      {showlegend:false, yaxis:{ticksuffix:'%',gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}}});
+  }
+
+  // Market activity by district — recent second-hand deals (geographic liquidity proxy)
+  const act=((state.districts&&state.districts.by_district)||[])
+    .filter(d=>d.units!=null).sort((a,b)=>a.units-b.units);
+  if(act.length){
+    draw('activityChart', Object.keys(REGION_SLOT).filter(r=>act.some(d=>d.region===r)).map(region=>({
+      type:'bar', orientation:'h', name:region,
+      y:act.map(d=>d.district), x:act.map(d=>d.region===region?d.units:null),
+      marker:{color:c[REGION_SLOT[region]]},
+      hovertemplate:`%{y} · ${region}<br>%{x:,} deals (30d)<extra></extra>`,
+    })), {barmode:'stack', margin:{l:150,r:20,t:10,b:34},
+      xaxis:{title:{text:'second-hand deals · last 30 days',font:{color:c.ink2}},gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}},
+      yaxis:{categoryorder:'array', categoryarray:act.map(d=>d.district), gridcolor:'rgba(0,0,0,0)', linecolor:c.baseline, tickfont:{color:c.ink2,size:11.5}}});
+    document.getElementById('activityChart').style.height = Math.max(300, act.length*24+60)+'px';
+  }
 }
 
 /* ---------- News ---------- */
@@ -410,7 +444,21 @@ function renderMiniNews(){
   el.innerHTML = items.slice(0,4).map(n=>
     `<a href="${n.url}" target="_blank" rel="noopener">${n.title}<span class="src"> — ${n.publisher||''}</span></a>`).join('');
 }
+function relTime(iso){
+  if(!iso) return '';
+  const then=new Date(iso), now=new Date(), mins=Math.round((now-then)/60000);
+  if(Number.isNaN(mins)) return '';
+  if(mins<60) return mins<=1?'just now':`${mins} min ago`;
+  const hrs=Math.round(mins/60); if(hrs<24) return `${hrs} hour${hrs>1?'s':''} ago`;
+  const days=Math.round(hrs/24); if(days<7) return `${days} day${days>1?'s':''} ago`;
+  return then.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+}
 function drawNews(){
+  const gen=(state.news&&state.news.generated_at)||(state.top3&&state.top3.generated_at);
+  if($('#newsUpdated')){
+    $('#newsUpdated').textContent = gen ? `Updated ${relTime(gen)}` : '';
+    $('#newsUpdated').title = gen ? new Date(gen).toLocaleString('en-GB') : '';
+  }
   const top3=(state.top3&&state.top3.items)||[];
   $('#top3').innerHTML = top3.length ? top3.map((t,i)=>
     `<div class="t3"><div class="rank">${i+1}</div><div><h3>${t.title}</h3><p>${t.summary||''} ${t.url?`<a class="readmore" href="${t.url}" target="_blank" rel="noopener">Read more →</a>`:''}</p></div></div>`).join('')

@@ -92,6 +92,22 @@ def avg_by_class_region(url: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Time", "Class", "Region", "Value"])
 
 
+def vacancy_by_class(url: str) -> pd.DataFrame:
+    """Year + year-end vacancy % for each size class A–E (the RVD vacancy file is
+    published 'by class', but total_series keeps only the Total column)."""
+    df = _df(url).rename(columns={"period": "Year"})
+    rows = []
+    for cls in ("Class A", "Class B", "Class C", "Class D", "Class E"):
+        col = next((c for c in df.columns if c.startswith(cls) and "%" in c), None)
+        if not col:
+            continue
+        for _, r in df.iterrows():
+            y = re.sub(r"\D", "", str(r["Year"]))[:4]
+            if len(y) == 4:
+                rows.append((y, CLASS_MAP[cls], clean(r[col])))
+    return pd.DataFrame(rows, columns=["Year", "Class", "Vacancy"])
+
+
 def total_series(url: str, want: str) -> pd.DataFrame:
     """Year + the 'Total' column matching `want` ('unit' or 'pct')."""
     df = _df(url).rename(columns={"period": "Year"})
@@ -161,6 +177,7 @@ def main():
     save(comp.rename(columns={"val": "Total (No. of units)"}), "(9)Completions.csv")
     vac = total_series(RVD + "Private_Domestic-Vacancy.csv", "pct")
     save(vac.rename(columns={"val": "Total (% of stock)"}), "(9)Vacancy.csv")
+    save(vacancy_by_class(RVD + "Private_Domestic-Vacancy.csv"), "(9)Vacancy_by_class.csv")
 
     save(hibor_1m(), "(5)Combined_HIBOR_Data.csv")
     print("Done — data/clean refreshed from the internet.")
