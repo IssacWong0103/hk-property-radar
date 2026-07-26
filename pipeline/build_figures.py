@@ -334,18 +334,15 @@ def build_estates() -> dict:
 
 # --------------------------------------------------------------- transaction volume
 def build_volume() -> dict:
-    df = load_csv("(15)", "agreements")
-    df = df.copy()
-    df["iso"] = df["Period"].map(yyyymm_to_iso)
-    df["val"] = num(df["Value"])
-    periods = sorted(df["iso"].dropna().unique().tolist())
-
-    def series_for(type_key):
-        g = df[df["Type"].str.contains(type_key, case=False, na=False)]
-        m = dict(zip(g["iso"], g["val"]))
-        return [_r(m.get(p), 0) for p in periods]
-
-    return {"periods": periods, "primary": series_for("Prim"), "secondary": series_for("Second")}
+    """Total monthly residential S&P agreements (Land Registry). The open data
+    doesn't split primary vs secondary, so we report the official total — the
+    core 'is the market active or quiet?' signal for a buyer timing a purchase."""
+    df = load_csv("(15)").copy()
+    df["val"] = num(df["Total"])
+    df = df.dropna(subset=["val"]).sort_values("Period")
+    periods = df["Period"].astype(str).str.slice(0, 10).tolist()
+    total = [_r(v, 0) for v in df["val"]]
+    return {"periods": periods, "total": total}
 
 
 # --------------------------------------------------------------- supply / vacancy
@@ -374,6 +371,40 @@ def build_supply() -> dict:
         "years": years,
         "completions": [_r(comp_u.get(y), 0) for y in years],
         "vacancy_pct": [vac_disp(vac_pct.get(y)) for y in years],
+        "vacancy_class": _vacancy_by_class(),
+    }
+
+
+def _vacancy_by_class():
+    """Year-end vacancy % by flat-size class (A–E). RVD doesn't publish vacancy by
+    district, but it does by size class — bigger/luxury flats sit empty far more."""
+    try:
+        df = load_csv("(9)", "vacancy_by_class").copy()
+    except FileNotFoundError:
+        return None
+    df["Year"] = num(df["Year"])
+    df["Vacancy"] = num(df["Vacancy"])
+    df = df.dropna(subset=["Year", "Vacancy"])
+    if df.empty:
+        return None
+    classes = [c for c in CLASS_ORDER[:5]]                       # Class A–E
+    years = sorted(int(y) for y in df["Year"].unique())
+
+    def as_pct(v):
+        return round(v * 100, 2) if v < 1 else round(v, 2)      # file stores fractions
+
+    series = {}
+    for cls in classes:
+        m = dict(zip(df[df["Class"] == cls]["Year"].astype(int),
+                     df[df["Class"] == cls]["Vacancy"]))
+        series[cls] = [as_pct(m[y]) if y in m else None for y in years]
+    latest = years[-1]
+    return {
+        "classes": classes,
+        "years": years,
+        "latest_year": latest,
+        "latest": {cls: series[cls][-1] for cls in classes},
+        "series": series,
     }
 
 
@@ -434,12 +465,13 @@ def build_kpis(pri: dict, vol: dict, macro: dict) -> list:
         kpis.append({"label": "1M HIBOR (mortgage cost)", "value": hv[-1], "unit": "%",
                      "sub": macro["hibor"]["dates"][-1][:7]})
 
-    if vol["periods"]:
-        p = vol["primary"][-1]
-        s = vol["secondary"][-1]
-        kpis.append({"label": "Transactions (latest qtr)",
-                     "value": (int(p or 0) + int(s or 0)),
-                     "sub": f"{int(p or 0):,} primary · {int(s or 0):,} secondary",
+    if vol.get("periods") and vol.get("total"):
+        latest = vol["total"][-1]
+        prev = vol["total"][-2] if len(vol["total"]) > 1 else None
+        mom = _pct(latest, prev)
+        kpis.append({"label": "Transactions (latest month)",
+                     "value": int(latest or 0),
+                     "sub": _trend_sub(mom, "MoM"),
                      "period": vol["periods"][-1]})
     return kpis
 
@@ -467,7 +499,7 @@ def main():
     avg = build_avg_price_rent()
     dist = safe(build_districts, {"by_district": [], "areas": [], "totals": {}, "source": "live source pending"}, "districts")
     est = safe(build_estates, {"by_district": {}, "regions": {}, "totals": {}, "source": "estate data pending"}, "estates")
-    vol = safe(build_volume, {"periods": [], "primary": [], "secondary": []}, "volume")
+    vol = safe(build_volume, {"periods": [], "total": []}, "volume")
     sup = safe(build_supply, {"years": [], "completions": [], "vacancy_pct": []}, "supply")
     macro = build_macro()
     kpis = build_kpis(pri, vol, macro)

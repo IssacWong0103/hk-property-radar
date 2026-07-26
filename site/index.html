@@ -241,28 +241,35 @@
           <div id="hiborChart" class="chart chart-sm"></div>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Transactions — primary vs secondary</h2><span class="card-sub">quarterly agreements</span></div>
+          <div class="card-head"><h2>Residential transactions</h2><span class="card-sub" id="volumeSub">monthly · Land Registry</span></div>
           <div id="volumeChart" class="chart chart-sm"></div>
+          <p class="note">Total sale &amp; purchase agreements per month. High volume = an active market; a sharp drop often means softer prices and more room to negotiate.</p>
         </div>
         <div class="card">
           <div class="card-head"><h2>New supply — completions</h2><span class="card-sub">private units / year</span></div>
           <div id="completionsChart" class="chart chart-sm"></div>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Vacancy rate</h2><span class="card-sub">% of private stock</span></div>
+          <div class="card-head"><h2>Vacancy by flat size</h2><span class="card-sub" id="vacancySub">% vacant · latest year</span></div>
           <div id="vacancyChart" class="chart chart-sm"></div>
+          <p class="note">RVD publishes vacancy by flat-size class, not by district. Larger &amp; luxury flats sit empty far more than small ones — a supply-glut signal at the top end.</p>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Market activity by district</h2><span class="card-sub">recent second-hand deals · 30 days</span></div>
+        <div id="activityChart" class="chart"></div>
+        <p class="note">District-level vacancy isn't published anywhere, so this is the closest geographic signal: how many second-hand flats are actually changing hands in each district (Centaline). More deals = a more liquid, easier-to-resell market — not a vacancy rate.</p>
       </div>
     </section>
 
     <!-- NEWS -->
     <section class="tabpane" id="pane-news">
       <div class="card" id="top3Card">
-        <div class="card-head"><h2>Top 3 moves this week</h2><span class="card-sub">AI brief · DeepSeek</span></div>
+        <div class="card-head"><h2>Top 3 moves this week</h2><span class="card-sub">AI brief</span></div>
         <div id="top3" class="top3"></div>
       </div>
       <div class="card">
-        <div class="card-head"><h2>Latest HK property news</h2></div>
+        <div class="card-head"><h2>Latest HK property news</h2><span class="card-sub" id="newsUpdated"></span></div>
         <div id="newsFeed" class="news-feed"></div>
       </div>
     </section>
@@ -293,6 +300,6 @@
   </footer>
 
   <script src="afford.js?v=2"></script>
-  <script src="app.js?v=8"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

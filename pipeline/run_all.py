@@ -37,6 +37,7 @@ def main() -> int:
     # 1) Self-source the latest official data from the internet (RVD + HKMA).
     #    If the network hiccups, the build below still runs on the last-good CSVs.
     stage("fetch RVD + HKMA data", "fetch_rvd")
+    stage("fetch Land Registry transaction volume", "fetch_landreg", optional=True)
     stage("fetch 18-district second-hand prices (Centaline)", "fetch_centaline", optional=True)
     # 2) Rebuild the dashboard JSON from data/clean/
     ok &= stage("build site data", "build_figures")
