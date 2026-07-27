@@ -109,20 +109,36 @@ function drawHome(){
 }
 
 /* ---------- Districts ---------- */
+/* Compact HTML region legend placed just above a chart. Replaces Plotly's own
+   legend, which at phone widths collapses onto the bars and overlaps them. */
+function regionLegendBefore(chartId, regions){
+  const chart = document.getElementById(chartId);
+  if (!chart) return;
+  let lg = chart.previousElementSibling;
+  if (!lg || !lg.classList || !lg.classList.contains('chart-legend')){
+    lg = document.createElement('div');
+    lg.className = 'chart-legend';
+    chart.parentNode.insertBefore(lg, chart);
+  }
+  const c = C();
+  lg.innerHTML = regions.map(r =>
+    `<span class="cl-item"><i style="background:${c[REGION_SLOT[r]]}"></i>${r}</span>`).join('');
+}
+
 function drawDistrictBars(id, rows, metric, axisTitle){
   const c = C();
   const sorted = rows.filter(d=>d[metric]!=null).sort((a,b)=>a[metric]-b[metric]); // asc → biggest on top
   const names = sorted.map(d=>d.district);
-  const byRegion = {};
-  sorted.forEach(d=>{ (byRegion[d.region]=byRegion[d.region]||{x:[],y:[]}); });
-  const traces = Object.keys(REGION_SLOT).filter(r=>sorted.some(d=>d.region===r)).map(region=>({
+  const regions = Object.keys(REGION_SLOT).filter(r=>sorted.some(d=>d.region===r));
+  const traces = regions.map(region=>({
     type:'bar', orientation:'h', name:region,
     y:sorted.map(d=>d.district), x:sorted.map(d=>d.region===region?d[metric]:null),
     marker:{color:c[REGION_SLOT[region]]},
     hovertemplate:`%{y} · ${region}<br>${axisTitle}: %{x:,}<extra></extra>`,
   }));
-  document.getElementById(id).style.height = Math.max(260, names.length*26+70)+'px';
-  draw(id, traces, {barmode:'stack', margin:{l:150,r:20,t:10,b:34},
+  regionLegendBefore(id, regions);
+  document.getElementById(id).style.height = Math.max(240, names.length*26+50)+'px';
+  draw(id, traces, {barmode:'stack', showlegend:false, margin:{l:150,r:20,t:10,b:34},
     xaxis:{title:{text:axisTitle,font:{color:c.ink2}},gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}},
     yaxis:{categoryorder:'array', categoryarray:names, gridcolor:'rgba(0,0,0,0)', linecolor:c.baseline, tickfont:{color:c.ink2,size:11.5}}});
 }
@@ -443,14 +459,16 @@ function drawMarket(){
   const act=((state.districts&&state.districts.by_district)||[])
     .filter(d=>d.units!=null).sort((a,b)=>a.units-b.units);
   if(act.length){
+    const aregions = Object.keys(REGION_SLOT).filter(r=>act.some(d=>d.region===r));
+    regionLegendBefore('activityChart', aregions);
     // Height must be set BEFORE draw so the plot fills it (draw() pins to the box).
-    document.getElementById('activityChart').style.height = Math.max(300, act.length*24+60)+'px';
-    draw('activityChart', Object.keys(REGION_SLOT).filter(r=>act.some(d=>d.region===r)).map(region=>({
+    document.getElementById('activityChart').style.height = Math.max(300, act.length*24+44)+'px';
+    draw('activityChart', aregions.map(region=>({
       type:'bar', orientation:'h', name:region,
       y:act.map(d=>d.district), x:act.map(d=>d.region===region?d.units:null),
       marker:{color:c[REGION_SLOT[region]]},
       hovertemplate:`%{y} · ${region}<br>%{x:,} deals (30d)<extra></extra>`,
-    })), {barmode:'stack', margin:{l:150,r:20,t:10,b:34},
+    })), {barmode:'stack', showlegend:false, margin:{l:150,r:20,t:10,b:34},
       xaxis:{title:{text:'second-hand deals · last 30 days',font:{color:c.ink2}},gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}},
       yaxis:{categoryorder:'array', categoryarray:act.map(d=>d.district), gridcolor:'rgba(0,0,0,0)', linecolor:c.baseline, tickfont:{color:c.ink2,size:11.5}}});
   }
