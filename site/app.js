@@ -50,7 +50,26 @@ function baseLayout(opts={}){
     colorway:[c.s1,c.s2,c.s3],
   }, opts);
 }
-const draw = (id, data, layout) => Plotly.react(id, data, baseLayout(layout), CFG);
+function draw(id, data, layout){
+  const el = typeof id === 'string' ? document.getElementById(id) : id;
+  if (!el) return;
+  Plotly.react(el, data, baseLayout(layout), CFG);
+  // Plotly.react keeps the width from the first render and won't re-autosize when
+  // the container has since changed size (tab switch, viewport/orientation change).
+  // Left unpinned, a chart drawn at one width spills its axis labels outside the
+  // card at another. Pin it to the container's current box every draw.
+  if (el.clientWidth) Plotly.relayout(el, {width: el.clientWidth, height: el.clientHeight});
+}
+
+/* Re-fit the visible tab's charts after a viewport/orientation change (hidden
+   tabs re-fit when next drawn). */
+let _resizeTimer;
+function refitCharts(){
+  document.querySelectorAll('.tabpane.is-active [id$="Chart"]').forEach(el=>{
+    if (el.clientWidth && el._fullLayout) Plotly.relayout(el, {width: el.clientWidth, height: el.clientHeight});
+  });
+}
+addEventListener('resize', ()=>{ clearTimeout(_resizeTimer); _resizeTimer = setTimeout(refitCharts, 150); });
 
 /* ---------- KPIs ---------- */
 function renderKpis(){
@@ -85,7 +104,6 @@ function drawHome(){
   const priced = state.districts.by_district.filter(d=>d.avg_psf!=null).sort((a,b)=>b.avg_psf-a.avg_psf);
   const pick = [...priced.slice(0,5), ...priced.slice(-5)];
   drawDistrictBars('homeDistrictChart', pick, 'avg_psf', 'HK$ / sq.ft');
-  $('#homeDistrictChart').style.height='300px';
 
   renderMiniNews();
 }
@@ -425,6 +443,8 @@ function drawMarket(){
   const act=((state.districts&&state.districts.by_district)||[])
     .filter(d=>d.units!=null).sort((a,b)=>a.units-b.units);
   if(act.length){
+    // Height must be set BEFORE draw so the plot fills it (draw() pins to the box).
+    document.getElementById('activityChart').style.height = Math.max(300, act.length*24+60)+'px';
     draw('activityChart', Object.keys(REGION_SLOT).filter(r=>act.some(d=>d.region===r)).map(region=>({
       type:'bar', orientation:'h', name:region,
       y:act.map(d=>d.district), x:act.map(d=>d.region===region?d.units:null),
@@ -433,7 +453,6 @@ function drawMarket(){
     })), {barmode:'stack', margin:{l:150,r:20,t:10,b:34},
       xaxis:{title:{text:'second-hand deals · last 30 days',font:{color:c.ink2}},gridcolor:c.grid,linecolor:c.baseline,tickfont:{color:c.muted}},
       yaxis:{categoryorder:'array', categoryarray:act.map(d=>d.district), gridcolor:'rgba(0,0,0,0)', linecolor:c.baseline, tickfont:{color:c.ink2,size:11.5}}});
-    document.getElementById('activityChart').style.height = Math.max(300, act.length*24+60)+'px';
   }
 }
 
